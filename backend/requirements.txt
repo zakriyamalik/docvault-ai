@@ -4,3 +4,7 @@ python-dotenv
 redis
 rq
 python-multipart
+SQLAlchemy>=2.0
+pdfplumber
+PyMuPDF
+python-docx

@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   # -----------------------
   # Backend (FastAPI)
@@ -14,7 +12,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ../backend:/app
+      - ../backend:/app                 # keep for hot reload
       - uploads-data:/data/uploads
       - db-data:/data/db
       - ./data/uploads:/data/uploads
@@ -40,10 +38,9 @@ services:
       context: ../backend
       dockerfile: Dockerfile
     container_name: docvault_worker
-    command: python /app/worker/worker.py
+    command: python -m app.worker.worker
     volumes:
-      - ../backend:/app
-      - uploads-data:/data/uploads
+      - uploads-data:/data/uploads      # keep only data volumes
       - db-data:/data/db
       - faiss-data:/data/faiss
     environment:

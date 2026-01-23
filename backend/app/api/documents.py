@@ -3,6 +3,7 @@
 from fastapi import APIRouter, UploadFile, Depends, HTTPException
 from uuid import uuid4
 from pathlib import Path
+from app.tasks import ingest_document
 
 from app.storage import save_upload
 from app.repository import create_document_row
@@ -61,7 +62,7 @@ def upload_document(
 
         # 4️⃣ Enqueue ingestion job (Task-5 executes it)
         job = rq_queue.enqueue(
-            "tasks.ingest_document",
+            ingest_document,
             document_id=document_id,
             file_path=str(saved_path),
         )
