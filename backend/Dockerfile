@@ -13,6 +13,8 @@ COPY app ./app
 COPY .env.example .env
 
 ENV PYTHONUNBUFFERED=1
+# Create uploads directory
+RUN mkdir -p /data/uploads
 
 EXPOSE 8000
 

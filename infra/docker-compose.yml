@@ -1,6 +1,9 @@
 version: "3.8"
 
 services:
+  # -----------------------
+  # Backend (FastAPI)
+  # -----------------------
   backend:
     build:
       context: ../backend
@@ -11,14 +14,60 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ../backend/app:/app/app   # maps local app folder to container
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+      - ../backend:/app
+      - uploads-data:/data/uploads
+      - db-data:/data/db
+      - ./data/uploads:/data/uploads
+      - faiss-data:/data/faiss
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    command: sh -c "python /app/app/db/init_db.py && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 5s
       timeout: 2s
       retries: 5
+    depends_on:
+      redis:
+        condition: service_started
 
+  # -----------------------
+  # Worker (Background job consumer)
+  # -----------------------
+  worker:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: docvault_worker
+    command: python /app/worker/worker.py
+    volumes:
+      - ../backend:/app
+      - uploads-data:/data/uploads
+      - db-data:/data/db
+      - faiss-data:/data/faiss
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - redis
+      - backend
+
+  # -----------------------
+  # Redis (Queue broker)
+  # -----------------------
+  redis:
+    image: redis:7-alpine
+    container_name: docvault_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+
+  # -----------------------
+  # Frontend (unchanged)
+  # -----------------------
   frontend:
     build:
       context: ../frontend
@@ -29,3 +78,12 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+
+# -----------------------
+# Volumes
+# -----------------------
+volumes:
+  redis-data:
+  uploads-data:
+  db-data:
+  faiss-data:
