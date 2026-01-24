@@ -9,3 +9,4 @@ pdfplumber
 PyMuPDF
 python-docx
 pytest
+pytesseract>=0.3.10

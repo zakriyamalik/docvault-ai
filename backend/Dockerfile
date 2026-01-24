@@ -6,13 +6,14 @@ ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 ENV PIP_DEFAULT_TIMEOUT=100
 
-# Small system deps useful for healthchecks and building wheels
+# Small system deps useful for healthchecks and building wheels + OCR
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       curl \
       build-essential \
       gcc \
       libpq-dev \
+      tesseract-ocr \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python deps (upgrade pip and retry to reduce transient failures)
