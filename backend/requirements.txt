@@ -13,3 +13,6 @@ pytesseract>=0.3.10
 transformers==4.35.0
 tokenizers
 sentence-transformers
+faiss-cpu
+filelock
+numpy
