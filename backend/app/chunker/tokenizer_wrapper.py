@@ -25,6 +25,8 @@ def tokenize_text(tokenizer, text: str) -> Tuple[List[int], List[Tuple[int, int]
         text,
         return_offsets_mapping=True,
         add_special_tokens=False,
+        truncation=True,
+        max_length=tokenizer.model_max_length,
     )
     return enc.get("input_ids", []), enc.get("offset_mapping", [])
 

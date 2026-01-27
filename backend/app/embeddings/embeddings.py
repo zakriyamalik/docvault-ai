@@ -35,6 +35,7 @@ class EmbeddingWrapper:
             from sentence_transformers import SentenceTransformer
 
             self._model = SentenceTransformer(self.DEFAULT_MODEL_NAME, device=self._device)
+            self._model.max_seq_length = 512
             # Resolve dimension from model to avoid assumptions
             try:
                 self.dim = int(self._model.get_sentence_embedding_dimension())
