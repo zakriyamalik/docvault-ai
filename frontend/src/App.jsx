@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import AdminDocuments from "./AdminDocuments";
 
 function App() {
   const [status, setStatus] = useState("Loading...");
@@ -11,9 +12,15 @@ function App() {
   }, []);
 
   return (
-    <div>
-      <h1>DocVault AI — Coming Soon</h1>
+    <div style={{ padding: "20px" }}>
+      <h1>DocVault AI — Admin Dashboard</h1>
       <p>Backend status: {status}</p>
+
+      {/* Admin Documents Section */}
+      <section style={{ marginTop: "40px" }}>
+        <h2>Document Ingestion Admin</h2>
+        <AdminDocuments />
+      </section>
     </div>
   );
 }

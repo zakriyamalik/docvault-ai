@@ -75,6 +75,12 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    environment:
+      # Vite expects VITE_ prefixed env vars
+      VITE_API_URL: "http://localhost:8000"
+    volumes:
+      - ../frontend:/app                      # bind host frontend into container (source of truth)
+      - node_modules_frontend:/app/node_modules # preserve container's node_modules (avoid host/node issues)
 
 # -----------------------
 # Volumes
@@ -84,3 +90,4 @@ volumes:
   uploads-data:
   db-data:
   faiss-data:
+  node_modules_frontend:
