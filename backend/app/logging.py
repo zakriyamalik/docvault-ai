@@ -11,24 +11,29 @@ class JsonFormatter(logging.Formatter):
     """
     Emit one JSON object per log line.
     Enforces structured logging with required fields.
+    Fallbacks to plain messages if structured data missing.
     """
 
     def format(self, record: logging.LogRecord) -> str:
+        ts = datetime.now(timezone.utc).isoformat()
         log_obj = {
-            "ts": datetime.now(timezone.utc).isoformat(),
+            "ts": ts,
             "level": record.levelname,
             "module": getattr(record, "module_name", record.name),
         }
 
         # Structured fields passed via extra
         structured = getattr(record, "structured", None)
-        if not structured:
-            raise ValueError("Structured log entry missing 'event'")
 
-        if "event" not in structured:
-            raise ValueError("Structured log entry missing required field: 'event'")
+        if structured:
+            # Validate event key exists
+            if "event" not in structured:
+                raise ValueError("Structured log entry missing required field: 'event'")
+            log_obj.update(structured)
+        else:
+            # fallback: plain message
+            log_obj["message"] = record.getMessage()
 
-        log_obj.update(structured)
         return json.dumps(log_obj, ensure_ascii=False)
 
 

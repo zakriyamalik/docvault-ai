@@ -28,9 +28,7 @@ FAISS_INDEX_NAME = os.getenv("FAISS_INDEX_NAME", "default")
 FAISS_INDEX_PATH = os.getenv("FAISS_INDEX_PATH", f"/data/faiss/{FAISS_INDEX_NAME}.faiss")
 
 # Redis DLQ
-REDIS_HOST = os.getenv("REDIS_HOST", "redis")
-REDIS_PORT = os.getenv("REDIS_PORT", "6379")
-REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/0"
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 r = redis.Redis.from_url(REDIS_URL)
 INGEST_DLQ_KEY = "ingest_dlq"
 
@@ -81,7 +79,7 @@ def ingest_document_atomic(document_id: str, file_path: Optional[str] = None):
         log.info(
             event="ingest_started",
             document_id=document_id,
-            filename=row["filename"] if row and "filename" in row.keys() else None,
+            filename=row.get("filename") if row else None,
         )
 
         # -----------------------------
