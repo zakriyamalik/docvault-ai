@@ -25,7 +25,7 @@ jobs:
       - name: Start containers
         run: |
           cd infra
-          docker compose up -d
+          docker compose up -d backend redis worker
 
       - name: Wait for backend
         run: |
@@ -39,7 +39,91 @@ jobs:
           echo "Backend did not become healthy"
           exit 1
 
+      - name: Run integration tests
+        env:
+          EMBEDDING_STUB: "true"
+        run: |
+          cd infra
+          docker compose exec backend pytest backend/tests/test_integration_ingest.py
+
+      - name: Collect docker logs
+        if: always()
+        run: |
+          cd infra
+          docker compose logs > docker-compose.log
+
+      - name: Upload docker logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-compose-logs
+          path: infra/docker-compose.log
+
       - name: Stop containers
         run: |
           cd infra
           docker compose down
+
+
+
+
+# name: DocVault CI
+
+# on:
+#   push:
+#     branches: [ "main" ]
+#   pull_request:
+#     branches: [ "main" ]
+
+# jobs:
+#   build-and-test:
+#     runs-on: ubuntu-latest
+
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+
+#       - name: Pull lightweight CI image
+#         run: |
+#           docker pull myrepo/docvault-ci:latest
+
+#       - name: Start backend container
+#         run: |
+#           docker run -d --name backend-ci \
+#             -v $GITHUB_WORKSPACE:/app \
+#             -e EMBEDDING_STUB=true \
+#             myrepo/docvault-ci:latest \
+#             tail -f /dev/null
+
+#       - name: Wait for backend
+#         run: |
+#           for i in {1..20}; do
+#             if docker exec backend-ci curl -f http://localhost:8000/health; then
+#               echo "Backend is healthy"
+#               exit 0
+#             fi
+#             sleep 3
+#           done
+#           echo "Backend did not become healthy"
+#           exit 1
+
+#       - name: Run integration tests
+#         run: |
+#           docker exec backend-ci pytest backend/tests/test_integration_ingest.py
+
+#       - name: Collect logs
+#         if: always()
+#         run: |
+#           docker logs backend-ci > docker-compose.log
+
+#       - name: Upload logs
+#         if: always()
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: docker-compose-logs
+#           path: docker-compose.log
+
+#       - name: Stop backend container
+#         run: |
+#           docker stop backend-ci
+#           docker rm backend-ci
