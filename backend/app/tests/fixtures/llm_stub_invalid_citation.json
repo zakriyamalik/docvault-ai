@@ -1,0 +1,6 @@
+{
+  "request_id": "test_invalid_citation_001",
+  "answer": "Linux evolved rapidly due to open source collaboration.",
+  "citations": ["doc:unknown_source:p99"],
+  "latency_ms": 15
+}

@@ -1,0 +1,6 @@
+{
+  "request_id": "test_invalid_json_001",
+  "answer": "This response is intentionally broken for parser testing",
+  "citations": ["doc:linux_history:p1"],
+  "latency_ms": 10
+}

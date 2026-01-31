@@ -16,3 +16,4 @@ sentence-transformers
 faiss-cpu
 filelock
 numpy
+prometheus-client
