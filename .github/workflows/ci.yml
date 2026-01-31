@@ -44,7 +44,7 @@ jobs:
           EMBEDDING_STUB: "true"
         run: |
           cd infra
-          docker compose exec backend pytest backend/tests/test_integration_ingest.py
+          docker compose exec backend pytest
 
       - name: Collect docker logs
         if: always()
