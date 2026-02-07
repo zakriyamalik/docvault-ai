@@ -31,6 +31,9 @@ COPY .env.example .env
 # Create uploads dir used by the app
 RUN mkdir -p /data/uploads
 
+# ADD THIS LINE ↓↓↓
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
+
 EXPOSE 8000
 
 # Default command for backend; worker will override command in docker-compose

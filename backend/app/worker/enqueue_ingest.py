@@ -11,7 +11,7 @@ q = Queue("ingest", connection=redis_conn)
 def enqueue_ingest(document_id: str, file_path: str):
     # Retry policy: 3 retries, delays: 10s, 30s, 60s
     retry = Retry(max=3, interval=[10, 30, 60])
-    job = q.enqueue(ingest_document, args=(document_id, file_path), retry=retry)
+    job = q.enqueue(ingest_document, args=(document_id, file_path), retry=retry, job_timeout=900)
     print("Enqueued job:", job.id)
     return job.id
 

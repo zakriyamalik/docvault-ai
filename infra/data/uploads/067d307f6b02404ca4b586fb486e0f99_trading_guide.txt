@@ -1,0 +1,14 @@
+
+    Trading Assistant Guide
+    
+    A trading assistant is a software tool that helps traders execute orders,
+    monitor markets, and manage risk. Key features include:
+    
+    1. Order management systems
+    2. Real-time market data feeds
+    3. Risk monitoring and alerts
+    4. Automated trading strategies
+    
+    Professional traders rely on trading assistants to improve efficiency
+    and reduce manual errors in fast-moving markets.
+    

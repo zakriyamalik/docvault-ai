@@ -12,14 +12,16 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ../backend:/app                 # keep for hot reload
+      - ../backend:/app
       - uploads-data:/data/uploads
-      - db-data:/data/db
       - ./data/uploads:/data/uploads
+      - db-data:/data/db
       - faiss-data:/data/faiss
+      - model-cache:/root/.cache
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - SENTENCE_TRANSFORMERS_HOME=/root/.cache/sentence-transformers
     command: sh -c "python /app/app/db/init_db.py && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -40,15 +42,30 @@ services:
     container_name: docvault_worker
     command: python -m app.worker.worker
     volumes:
-      - uploads-data:/data/uploads      # keep only data volumes
+      - uploads-data:/data/uploads
+      - ./data/uploads:/data/uploads    # <-- RESTORED
       - db-data:/data/db
       - faiss-data:/data/faiss
+      - model-cache:/root/.cache
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - GROQ_API_KEY=${GROQ_API_KEY:-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}
+      - LLM_PROVIDER=groq
+      - LLM_MODEL=llama-3.1-8b-instant
+      - SENTENCE_TRANSFORMERS_HOME=/root/.cache/sentence-transformers
+      - TRANSFORMERS_CACHE=/root/.cache/huggingface  # <-- RESTORED
+      - HF_HOME=/root/.cache/huggingface              # <-- RESTORED
     depends_on:
       - redis
       - backend
+    deploy:                              # <-- RESTORED
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
+    restart: unless-stopped             # <-- RESTORED
 
   # -----------------------
   # Redis (Queue broker)
@@ -63,9 +80,9 @@ services:
       - redis-data:/data
 
   # -----------------------
-  # Frontend (unchanged)
+  # Frontend 
   # -----------------------
-  frontend:
+  frontend:                             # <-- RESTORED ENTIRE SERVICE
     build:
       context: ../frontend
       dockerfile: Dockerfile
@@ -76,11 +93,10 @@ services:
       backend:
         condition: service_healthy
     environment:
-      # Vite expects VITE_ prefixed env vars
       VITE_API_URL: "http://localhost:8000"
     volumes:
-      - ../frontend:/app                      # bind host frontend into container (source of truth)
-      - node_modules_frontend:/app/node_modules # preserve container's node_modules (avoid host/node issues)
+      - ../frontend:/app
+      - node_modules_frontend:/app/node_modules
 
 # -----------------------
 # Volumes
@@ -91,3 +107,4 @@ volumes:
   db-data:
   faiss-data:
   node_modules_frontend:
+  model-cache:

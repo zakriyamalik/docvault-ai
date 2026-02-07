@@ -1,17 +1,10 @@
-# app/llm/adapter.py
 from __future__ import annotations
 
 import time
+import os
 from typing import Any, Dict, Optional
 
 from app.llm.circuit_breaker import CircuitBreaker, CircuitOpenError
-
-# -----------------------------
-# LLM Client Adapter
-# - Transport retries
-# - Circuit breaker protection
-# - Deterministic stub mode
-# -----------------------------
 
 
 class LLMTransportError(Exception):
@@ -34,11 +27,39 @@ class LLMClient:
         self.stub_responses = stub_responses or {}
 
     def _call_provider(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Actual provider call placeholder.
-        Must be implemented per provider.
-        """
-        raise NotImplementedError
+        """Route to actual provider based on config."""
+        from app.llm.schemas import LLMRequest, Message
+        
+        provider_name = payload.get("provider") or self.provider
+        
+        if provider_name == "groq":
+            from app.llm.providers import GroqProvider
+            
+            groq_provider = GroqProvider()
+            
+            request = LLMRequest(
+                provider="groq",
+                model=payload.get("model", "llama3-8b-8192"),
+                messages=[
+                    Message(role="system", content=payload.get("system", "You are a helpful assistant.")),
+                    Message(role="user", content=payload.get("query", ""))
+                ],
+                temperature=payload.get("temperature", 0.2),
+                max_output_tokens=payload.get("max_tokens", 1024),
+                request_id=payload.get("request_id")
+            )
+            
+            result = groq_provider.generate(request)
+            return {
+                "answer": result.answer.text,
+                "citations": [c.id for c in result.answer.citations],
+                "usage": result.usage,
+                "model": result.model,
+                "latency_ms": result.latency_ms
+            }
+        
+        else:
+            raise NotImplementedError(f"Provider {provider_name} not implemented")
 
     def _call_stub(self, request_id: str) -> Dict[str, Any]:
         if request_id not in self.stub_responses:
@@ -46,30 +67,23 @@ class LLMClient:
         return self.stub_responses[request_id]
 
     def generate(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        payload may include:
-            - request_id: (optional) stub id
-            - provider: (optional) override provider key
-            - other provider-specific fields
-        """
         request_id = payload.get("request_id")
         provider = payload.get("provider") or self.provider
 
-        # Circuit check per provider
         if self.circuit_breaker.is_open(provider):
             raise CircuitOpenError(f"LLM circuit is open for provider={provider}")
 
-        # Stub mode — robust lookup
+        # Stub mode - only if explicitly requested
         if request_id and request_id in self.stub_responses:
             return self._call_stub(request_id)
 
         if provider in self.stub_responses:
             return self._call_stub(provider)
 
-        if len(self.stub_responses) == 1:
-            return next(iter(self.stub_responses.values()))
+        # REMOVED: fallback to single stub when len(stub_responses) == 1
+        # This was causing the bug where groq provider was ignored
 
-        # No stub found — try real provider with retries
+        # Real provider with retries
         last_exc: Optional[Exception] = None
 
         for attempt in range(self.max_retries + 1):
@@ -78,10 +92,9 @@ class LLMClient:
                 response = self._call_provider(payload)
                 latency_ms = int((time.time() - start) * 1000)
                 response["latency_ms"] = latency_ms
-                # record success for the provider we just used
                 self.circuit_breaker.record_success(provider)
                 return response
-            except Exception as exc:  # transport-level only
+            except Exception as exc:
                 last_exc = exc
                 self.circuit_breaker.record_failure(provider)
                 if attempt >= self.max_retries:

@@ -1,0 +1,11 @@
+
+        Machine Learning in Healthcare
+        
+        Machine learning transforms healthcare through:
+        1. Medical image analysis
+        2. Drug discovery acceleration  
+        3. Personalized treatment plans
+        4. Predictive diagnostics
+        
+        Hospitals use ML to improve patient outcomes.
+        

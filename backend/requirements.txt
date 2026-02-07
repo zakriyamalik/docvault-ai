@@ -17,3 +17,4 @@ faiss-cpu
 filelock
 numpy
 prometheus-client
+groq>=0.4.0

@@ -1,0 +1,391 @@
+# app/api/chat.py
+from fastapi import APIRouter, HTTPException, Depends, status
+from pydantic import BaseModel, Field
+from typing import List, Optional, Dict, Any
+from datetime import datetime
+
+from app.repository import (
+    create_conversation,
+    insert_message,
+    get_conversation_history,
+    list_conversations,
+    conversation_exists,
+    delete_conversation
+)
+from app.services.query_service import QueryService
+
+router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
+
+
+# =============================================================================
+# PYDANTIC SCHEMAS
+# =============================================================================
+
+class StartChatRequest(BaseModel):
+    """Start a new conversation with optional first message."""
+    title_preview: Optional[str] = Field(
+        None, 
+        max_length=120,
+        description="Preview title from first message"
+    )
+    first_message: Optional[str] = Field(
+        None,
+        max_length=2000,
+        description="Optional first message to start the conversation"
+    )
+
+
+class SendMessageRequest(BaseModel):
+    """Send a message in an existing conversation."""
+    content: str = Field(
+        ..., 
+        min_length=1,
+        max_length=2000,
+        description="User message content"
+    )
+
+
+class ChatMessage(BaseModel):
+    """Single message in conversation history."""
+    id: str
+    role: str = Field(..., pattern="^(user|assistant|system)$")
+    content: str
+    sources: List[Dict[str, Any]] = []
+    created_at: str
+
+
+class ConversationInfo(BaseModel):
+    """Conversation metadata for list view."""
+    id: str
+    title: str
+    created_at: str
+    updated_at: Optional[str]
+
+
+class StartChatResponse(BaseModel):
+    """Response when starting a new conversation."""
+    conversation_id: str
+    title: str
+    first_message_id: Optional[str] = None
+
+
+class SendMessageResponse(BaseModel):
+    """Response when sending a message and getting assistant reply."""
+    conversation_id: str
+    message_id: str
+    role: str = "assistant"
+    content: str
+    sources: List[Dict[str, Any]] = []
+
+
+class ChatHistoryResponse(BaseModel):
+    """Full conversation history."""
+    conversation_id: str
+    messages: List[ChatMessage]
+
+
+class ConversationListResponse(BaseModel):
+    """List of conversations."""
+    conversations: List[ConversationInfo]
+    total: int
+
+
+class ErrorResponse(BaseModel):
+    """Error response model."""
+    detail: str
+
+
+# =============================================================================
+# DEPENDENCIES
+# =============================================================================
+
+def get_query_service():
+    """Dependency to get QueryService instance."""
+    return QueryService()
+
+
+# =============================================================================
+# ENDPOINTS
+# =============================================================================
+
+@router.post(
+    "/start",
+    response_model=StartChatResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses={400: {"model": ErrorResponse}}
+)
+def start_chat(
+    request: StartChatRequest,
+    query_service: QueryService = Depends(get_query_service)
+):
+    """
+    Start a new conversation.
+    
+    Optionally provide a first message to immediately get an assistant response.
+    """
+    # Create conversation
+    title = request.title_preview or (request.first_message[:120] if request.first_message else "New Chat")
+    conv_id = create_conversation(title_preview=title)
+    
+    first_msg_id = None
+    
+    # If first message provided, process it
+    if request.first_message:
+        # Store user message
+        first_msg_id = insert_message(
+            conversation_id=conv_id,
+            role="user",
+            content=request.first_message
+        )
+        
+        # Get RAG response (placeholder - integrate with actual retrieval)
+        # For now, use QueryService directly
+        result = query_service.process_query(request.first_message)
+        
+        # Extract answer and sources
+    if isinstance(result, dict):
+        # New structure from QueryService
+        if 'response' in result:
+            if hasattr(result['response'], 'answer'):
+                answer = result['response'].answer
+                sources = result['response'].citations if hasattr(result['response'], 'citations') else []
+            elif isinstance(result['response'], dict):
+                answer = result['response'].get('answer', 'I could not process your request.')
+                sources = result['response'].get('citations', [])
+            else:
+                answer = 'I could not process your request.'
+                sources = []
+        # Old structure or error dict
+        elif 'answer' in result:
+            answer = result.get('answer', 'I could not process your request.')
+            sources = result.get('citations', [])
+        else:
+            answer = 'I could not process your request.'
+            sources = []
+    elif hasattr(result, 'answer'):
+        answer = result.answer
+        sources = result.citations if hasattr(result, 'citations') else []
+    else:
+        answer = str(result)
+        sources = []
+            role="assistant",
+            content=answer,
+            sources=sources
+        )
+    
+    return StartChatResponse(
+        conversation_id=conv_id,
+        title=title,
+        first_message_id=first_msg_id
+    )
+
+
+@router.post(
+    "/{conversation_id}/message",
+    response_model=SendMessageResponse,
+    responses={
+        404: {"model": ErrorResponse},
+        400: {"model": ErrorResponse}
+    }
+)
+def send_message(
+    conversation_id: str,
+    request: SendMessageRequest,
+    query_service: QueryService = Depends(get_query_service)
+):
+    """
+    Send a message in an existing conversation and get assistant response.
+    
+    Retrieves conversation history for context, runs RAG + LLM,
+    stores both user and assistant messages, returns assistant reply.
+    """
+    # Validate conversation exists
+    if not conversation_exists(conversation_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Conversation {conversation_id} not found"
+        )
+    
+    # Store user message
+    user_msg_id = insert_message(
+        conversation_id=conversation_id,
+        role="user",
+        content=request.content
+    )
+    
+    # Get recent history for context (last 5 message pairs = 10 messages)
+    history = get_conversation_history(conversation_id, limit=10)
+    
+    # Build context string from history (excluding the just-added message)
+    context_messages = []
+    for msg in history[:-1]:  # Exclude the one we just added
+        context_messages.append(f"{msg['role']}: {msg['content']}")
+    
+    context = "\n".join(context_messages) if context_messages else None
+    
+    # Process with RAG + LLM
+    try:
+        result = query_service.process_query(
+            query=request.content,
+            context=context
+        )
+    except Exception as e:
+        # Log error, return graceful fallback
+        # In production, use proper logging
+        print(f"QueryService error: {e}")
+        result = {
+            "answer": "I apologize, but I encountered an error processing your request. Please try again.",
+            "citations": []
+        }
+    
+    # Extract answer and sources
+    if isinstance(result, dict):
+        # New QueryService response structure
+        if 'response' in result:
+            response_obj = result['response']
+            if hasattr(response_obj, 'answer'):
+                answer = response_obj.answer
+                sources = response_obj.citations if hasattr(response_obj, 'citations') else []
+            elif isinstance(response_obj, dict):
+                answer = response_obj.get('answer', 'I could not process your request.')
+                sources = response_obj.get('citations', [])
+            else:
+                answer = 'I could not process your request.'
+                sources = []
+        # Old structure or error dict
+        elif 'answer' in result:
+            answer = result.get('answer', 'I could not process your request.')
+            sources = result.get('citations', [])
+        else:
+            answer = 'I could not process your request.'
+            sources = []
+    elif hasattr(result, 'answer'):
+        answer = result.answer
+        sources = result.citations if hasattr(result, 'citations') else []
+    else:
+        answer = str(result)
+        sources = []
+    
+    # Normalize sources for API response
+    normalized_sources = []
+    for src in sources:
+        if isinstance(src, dict):
+            normalized_sources.append({
+                "chunk_id": src.get("chunk_id", ""),
+                "document_id": src.get("document_id", ""),
+                "page": src.get("page", 0),
+                "preview": src.get("preview", "")[:200],  # Truncate for API
+                "score": src.get("score", 0.0)
+            })
+        elif isinstance(src, str):
+            # Handle string citations (legacy format)
+            normalized_sources.append({
+                "chunk_id": src,
+                "document_id": "",
+                "page": 0,
+                "preview": "",
+                "score": 0.0
+            })
+    
+    # Store assistant response
+    assistant_msg_id = insert_message(
+        conversation_id=conversation_id,
+        role="assistant",
+        content=answer,
+        sources=normalized_sources
+    )
+    
+    return SendMessageResponse(
+        conversation_id=conversation_id,
+        message_id=assistant_msg_id,
+        content=answer,
+        sources=normalized_sources
+    )
+
+
+@router.get(
+    "/{conversation_id}/history",
+    response_model=ChatHistoryResponse,
+    responses={404: {"model": ErrorResponse}}
+)
+def get_history(conversation_id: str):
+    """
+    Get full message history for a conversation.
+    
+    Returns all messages ordered by time (oldest first).
+    """
+    # Validate conversation exists (optional - empty history is also valid)
+    if not conversation_exists(conversation_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Conversation {conversation_id} not found"
+        )
+    
+    # Fetch history
+    history = get_conversation_history(conversation_id, limit=500)
+    
+    # Convert to response model
+    messages = [
+        ChatMessage(
+            id=msg["id"],
+            role=msg["role"],
+            content=msg["content"],
+            sources=msg["sources"],
+            created_at=msg["created_at"]
+        )
+        for msg in history
+    ]
+    
+    return ChatHistoryResponse(
+        conversation_id=conversation_id,
+        messages=messages
+    )
+
+
+@router.get(
+    "/conversations/list",
+    response_model=ConversationListResponse
+)
+def list_user_conversations(limit: int = 20):
+    """
+    List recent conversations for the sidebar.
+    
+    Ordered by most recently updated first.
+    """
+    # Safety bounds
+    safe_limit = min(max(limit, 1), 100)
+    
+    conversations = list_conversations(limit=safe_limit)
+    
+    return ConversationListResponse(
+        conversations=[
+            ConversationInfo(
+                id=conv["id"],
+                title=conv["title"],
+                created_at=conv["created_at"],
+                updated_at=conv.get("updated_at")
+            )
+            for conv in conversations
+        ],
+        total=len(conversations)
+    )
+
+
+@router.delete(
+    "/{conversation_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={404: {"model": ErrorResponse}}
+)
+def delete_chat(conversation_id: str):
+    """
+    Delete a conversation and all its messages.
+    """
+    deleted = delete_conversation(conversation_id)
+    
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Conversation {conversation_id} not found"
+        )
+    
+    return None  # 204 No Content

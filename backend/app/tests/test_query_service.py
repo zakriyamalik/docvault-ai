@@ -6,6 +6,7 @@ from app.llm.circuit_breaker import CircuitBreaker
 from app.llm.grounding import GroundingError
 from app.llm.schemas import LLMJsonResponse
 
+
 @pytest.fixture
 def stub_client():
     cb = CircuitBreaker()
@@ -15,7 +16,7 @@ def stub_client():
         circuit_breaker=cb,
         stub_responses={
             "stub": {
-                "text": "stub answer",
+                "answer": "stub answer",
                 "citations": []
             }
         },
@@ -25,7 +26,6 @@ def stub_client():
 def test_query_service_happy_path(monkeypatch, stub_client):
     service = QueryService(quota_limit=10)
 
-    # Updated monkeypatch path for Docker
     monkeypatch.setattr(
         "app.services.query_service.llm_client",
         stub_client,
@@ -36,14 +36,35 @@ def test_query_service_happy_path(monkeypatch, stub_client):
     result = service.process_query(
         query=query,
         provider="stub",
+        use_retrieval=False,
     )
 
     assert "response" in result
-    assert result["response"]["text"] == "stub answer"
+    assert result["response"].answer == "stub answer"
+    assert "sources" in result
+
+
+def test_query_service_with_retrieval(monkeypatch, stub_client):
+    service = QueryService(quota_limit=10, top_k_retrieval=3)
+
+    monkeypatch.setattr(
+        "app.services.query_service.llm_client",
+        stub_client,
+    )
+
+    query = "test query"
+
+    result = service.process_query(
+        query=query,
+        provider="stub",
+        use_retrieval=True,
+    )
+
+    assert "sources" in result
+    assert isinstance(result["sources"], list)
 
 
 def test_query_service_grounding_failure(monkeypatch):
-    # Updated fixture path for Docker
     with open("app/tests/fixtures/llm_stub_invalid_citation.json") as f:
         invalid_stub = json.load(f)
 
@@ -57,7 +78,6 @@ def test_query_service_grounding_failure(monkeypatch):
 
     service = QueryService(quota_limit=10, force_validate_stubs=True)
 
-    # Updated monkeypatch path for Docker
     monkeypatch.setattr(
         "app.services.query_service.llm_client",
         client,
