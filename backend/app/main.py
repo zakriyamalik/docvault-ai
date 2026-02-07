@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # Include the documents router implemented in Task 4.x
 from app.api.documents import router as documents_router
 from app.api.chat import router as chat_router
+from app.api.admin import router as admin_router
 
 load_dotenv()
 
@@ -31,6 +32,12 @@ app.add_middleware(
 # Register API routers
 app.include_router(documents_router)
 app.include_router(chat_router)
+app.include_router(
+    admin_router,
+    prefix="/api/v1/admin",
+    tags=["admin"]
+)
+
 
 @app.get("/health")
 def health_check():
