@@ -1,7 +1,8 @@
 import React, { useState } from "react";
 import { 
   useListDocumentsQuery, 
-  useReembedDocumentMutation 
+  useReembedDocumentMutation,
+  useUploadDocumentMutation 
 } from "../../app/api/documentsApi";
 import { useDocumentStatusPolling } from "../../hooks/useDocumentStatusPolling";
 import { Badge } from "../ui/Badge";
@@ -17,7 +18,8 @@ import {
   CheckCircle2, 
   AlertCircle,
   Clock,
-  Eye
+  Eye,
+  Upload
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { Link } from "react-router-dom";
@@ -126,7 +128,21 @@ function DocumentRow({ doc }) {
 
 export default function AdminDocuments() {
   const { data: documents = [], isLoading, error, refetch } = useListDocumentsQuery();
+  const [uploadDocument, { isLoading: isUploading }] = useUploadDocumentMutation();
   const [filter, setFilter] = useState("all");
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    try {
+      await uploadDocument(file).unwrap();
+      refetch(); // Refresh the list
+    } catch (err) {
+      console.error("Upload failed:", err);
+      alert("Upload failed: " + (err.message || "Unknown error"));
+    }
+  };
 
   const filteredDocs = documents.filter((doc) => {
     if (filter === "all") return true;
@@ -180,6 +196,25 @@ export default function AdminDocuments() {
             <option value="queued">Queued</option>
             <option value="failed">Failed</option>
           </select>
+          
+          {/* UPLOAD BUTTON */}
+          <Button variant="default" size="sm" disabled={isUploading} asChild>
+            <label className="cursor-pointer">
+              {isUploading ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Upload className="h-4 w-4 mr-2" />
+              )}
+              Upload
+              <input 
+                type="file" 
+                className="hidden" 
+                onChange={handleFileChange}
+                accept=".pdf,.txt,.doc,.docx"
+              />
+            </label>
+          </Button>
+          
           <Button variant="outline" size="sm" onClick={refetch}>
             <RefreshCw className="h-4 w-4 mr-2" />
             Refresh

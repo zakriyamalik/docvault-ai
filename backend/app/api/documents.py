@@ -61,11 +61,14 @@ def upload_document(
         )
 
         # 4️⃣ Enqueue ingestion job (Task-5 executes it)
+        print(f"DEBUG: About to enqueue job for document {document_id}")
         job = rq_queue.enqueue(
             ingest_document,
             document_id=document_id,
             file_path=str(saved_path),
+            job_timeout=600,
         )
+        print(f"DEBUG: Job enqueued with ID: {job.id}")
 
         # 5️⃣ Return response
         return {
