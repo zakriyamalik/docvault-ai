@@ -9,6 +9,7 @@ import os
 import pytest
 import tempfile
 import pickle
+import time
 from fastapi.testclient import TestClient
 
 # Set deterministic env BEFORE importing app
@@ -19,6 +20,19 @@ os.environ["EVAL_SEED"] = "1337"
 from app.main import app
 from app.faiss_manager import FAISSManager
 from app.retrieval.retriever import retrieve
+
+
+def wait_for_faiss(timeout=20):
+    faiss_path = "/data/faiss/default.faiss"
+    ids_path = "/data/faiss/default.faiss.ids.pkl"
+
+    start = time.time()
+    while time.time() - start < timeout:
+        if os.path.exists(faiss_path) and os.path.exists(ids_path):
+            return True
+        time.sleep(0.5)
+
+    return False
 
 
 @pytest.fixture
@@ -85,8 +99,7 @@ class TestRAGPipelineEndToEnd:
             faiss_path = "/data/faiss/default.faiss"
             ids_path = "/data/faiss/default.faiss.ids.pkl"
             
-            import time
-            time.sleep(2)  # Wait for async ingestion
+            assert wait_for_faiss(), "FAISS index was not created in time"
             
             assert os.path.exists(faiss_path), "FAISS index not created"
             assert os.path.exists(ids_path), "FAISS IDs pickle not created"
@@ -120,8 +133,7 @@ class TestRAGPipelineEndToEnd:
                     files={"file": ("trading_guide.txt", f, "text/plain")}
                 )
             
-            import time
-            time.sleep(2)
+            assert wait_for_faiss(), "FAISS index was not created in time"
             
             # Test retrieval directly
             chunks, score = retrieve("What is trading assistant?", top_k=3)
@@ -156,8 +168,7 @@ class TestRAGPipelineEndToEnd:
                     files={"file": ("trading_guide.txt", f, "text/plain")}
                 )
             
-            import time
-            time.sleep(2)
+            assert wait_for_faiss(), "FAISS index was not created in time"
             
             # Start chat with RAG query
             response = client.post(
@@ -199,8 +210,7 @@ class TestRAGPipelineEndToEnd:
                     files={"file": ("trading_guide.txt", f, "text/plain")}
                 )
             
-            import time
-            time.sleep(2)
+            assert wait_for_faiss(), "FAISS index was not created in time"
             
             # Multiple queries should all work
             queries = [
@@ -246,8 +256,7 @@ class TestRAGPipelineEndToEnd:
             assert upload_resp.status_code == 200
             doc_id = upload_resp.json()["document_id"]
             
-            import time
-            time.sleep(2)
+            assert wait_for_faiss(), "FAISS index was not created in time"
             
             # 2. Verify FAISS
             assert os.path.exists("/data/faiss/default.faiss")
