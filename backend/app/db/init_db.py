@@ -4,7 +4,7 @@ import sqlite3
 from pathlib import Path
 
 MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
-DB_PATH = Path("/data/db/db.sqlite")
+DB_PATH = Path("/tmp/db/db.sqlite")
 
 def _ensure_db_path():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)

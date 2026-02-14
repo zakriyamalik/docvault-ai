@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.db.sqlite_conn import get_db
+from app.db.postgres_conn import get_db
 
 client = TestClient(app)
 

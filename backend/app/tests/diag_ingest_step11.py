@@ -7,7 +7,7 @@ import sqlite3
 from uuid import uuid4
 
 from app.tasks import ingest_document_atomic
-from app.db.sqlite_conn import DB_PATH
+from app.db.postgres_conn import get_db
 
 # Optional: set EMBEDDING_STUB to avoid real embeddings
 os.environ["EMBEDDING_STUB"] = "true"

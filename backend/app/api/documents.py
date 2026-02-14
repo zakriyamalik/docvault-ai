@@ -1,194 +1,153 @@
 # backend/app/api/documents.py
+import os
+import uuid
+import json
+from datetime import datetime, timezone
+from typing import Optional, List
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from pydantic import BaseModel
 
-from fastapi import APIRouter, UploadFile, Depends, HTTPException
-from uuid import uuid4
-from pathlib import Path
-from app.tasks import ingest_document
+from app.db.postgres_conn import get_db
+from app.repository import create_document, get_document, list_documents, get_document_status
+from app.chunker.chunker import get_chunks_for_document
+import boto3
 
-from app.storage import save_upload
-from app.repository import create_document_row
-from app.db.sqlite_conn import get_db
+router = APIRouter()
 
-import redis
-from rq import Queue
+# S3 client
+s3 = boto3.client("s3")
+S3_BUCKET = os.getenv("S3_BUCKET", "docvault-uploads")
 
-router = APIRouter(
-    prefix="/api/v1/documents",
-    tags=["documents"],
-)
-
-
-# ---- Auth placeholder ----
-def get_current_user():
-    return None
+UPLOAD_DIR = "/data/uploads"
 
 
-# ---- Redis / RQ setup (skeleton) ----
-redis_conn = redis.Redis(host="redis", port=6379, decode_responses=True)
-rq_queue = Queue("ingest", connection=redis_conn)
+class DocumentResponse(BaseModel):
+    id: str
+    filename: str
+    status: str
+    created_at: str
+    chunks_count: Optional[int] = 0
 
 
-@router.post("/upload")
-def upload_document(
-    file: UploadFile,
-    current_user=Depends(get_current_user),
+class DocumentStatusResponse(BaseModel):
+    status: str
+    ingest_started_at: Optional[str] = None
+    ingest_finished_at: Optional[str] = None
+    chunks_count: Optional[int] = 0
+    error_message: Optional[str] = None
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
+
+@router.post("/upload", response_model=dict)
+async def upload_document(
+    file: UploadFile = File(...),
+    source_type: str = Form("upload"),
 ):
-    """
-    Upload a document and enqueue ingestion job.
-    """
-
-    # 1️⃣ Enforce system-wide document limit (≤ 50)
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) FROM documents;")
-        doc_count = cur.fetchone()[0]
-
-    if doc_count >= 50:
-        raise HTTPException(
-            status_code=400,
-            detail="Document limit reached (max 50 documents allowed)",
-        )
-
+    """Upload a document and queue it for processing."""
+    doc_id = str(uuid.uuid4())
+    file_ext = os.path.splitext(file.filename or "")[1]
+    unique_filename = f"{uuid.uuid4().hex}{file_ext}"
+    local_path = os.path.join(UPLOAD_DIR, unique_filename)
+    
+    # Ensure upload directory exists
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    
+    # Save file locally
+    content = await file.read()
+    with open(local_path, "wb") as f:
+        f.write(content)
+    
+    file_size = len(content)
+    mime_type = file.content_type or "application/octet-stream"
+    
+    # Upload to S3
+    s3_key = f"uploads/{unique_filename}"
     try:
-        # 2️⃣ Save file (Task-3)
-        saved_path, size_bytes = save_upload(file)
+        s3.upload_file(local_path, S3_BUCKET, s3_key)
+    except Exception as e:
+        # S3 upload failed but we can still process locally
+        print(f"S3 upload failed: {e}")
+        s3_key = None
+    
+    # Create document record in PostgreSQL
+    create_document(
+        doc_id=doc_id,
+        filename=file.filename or "unknown",
+        source_type=source_type,
+        source_ref=s3_key or local_path,
+        mime_type=mime_type,
+        size_bytes=file_size,
+        status="queued",
+        meta_json=json.dumps({
+            "local_path": local_path,
+            "s3_key": s3_key,
+            "uploaded_at": _now_iso(),
+        }),
+    )
+    
+    # Enqueue job for processing
+    try:
+        from app.queue import enqueue_ingest
+        job_id = enqueue_ingest(doc_id, local_path)
+    except Exception as e:
+        print(f"Failed to enqueue job: {e}")
+        job_id = None
+    
+    return {
+        "document_id": doc_id,
+        "ingest_job_id": job_id,
+    }
 
-        # 3️⃣ Insert DB row
-        document_id = create_document_row(
-            filename=saved_path.name,
-            size_bytes=size_bytes,
-            status="queued",
-        )
 
-        # 4️⃣ Enqueue ingestion job (Task-5 executes it)
-        print(f"DEBUG: About to enqueue job for document {document_id}")
-        job = rq_queue.enqueue(
-            ingest_document,
-            document_id=document_id,
-            file_path=str(saved_path),
-            job_timeout=600,
-        )
-        print(f"DEBUG: Job enqueued with ID: {job.id}")
-
-        # 5️⃣ Return response
-        return {
-            "document_id": document_id,
-            "ingest_job_id": job.id,
-        }
-
-    except ValueError as ve:
-        raise HTTPException(status_code=400, detail=str(ve))
-
-    except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Upload failed: {str(exc)}",
-        )
-@router.get("/{document_id}/status")
-def get_document_status(document_id: str, current_user=Depends(get_current_user)):
-    """
-    Get ingestion status for a specific document.
-    """
-    with get_db() as conn:
-        cur = conn.cursor()
-
-        # Fetch document row
-        cur.execute(
-            "SELECT id, status, updated_at, meta_json FROM documents WHERE id = ?",
-            (document_id,)
-        )
-        doc = cur.fetchone()
-
-        if not doc:
-            raise HTTPException(status_code=404, detail="Document not found")
-
-        # Count chunks for this document
-        cur.execute(
-            "SELECT COUNT(*) FROM chunks WHERE document_id = ?",
-            (document_id,)
-        )
-        chunks_count = cur.fetchone()[0]
-
-        # Extract error_message if present in meta_json
-        import json
-        meta_json = doc["meta_json"]
-        error_message = None
-        if meta_json:
-            try:
-                meta = json.loads(meta_json)
-                error_message = meta.get("error_message")
-            except Exception:
-                pass
-
-        return {
-            "status": doc["status"],
-            "ingest_started_at": doc["updated_at"],  # placeholder for started timestamp
-            "ingest_finished_at": None,  # will be updated later after ingestion
-            "chunks_count": chunks_count,
-            "error_message": error_message,
-        }
-@router.get("/")
-def list_documents(current_user=Depends(get_current_user)):
-    """
-    Return a list of all documents with metadata:
-    id, filename, status, created_at, chunks_count
-    """
-    with get_db() as conn:
-        cur = conn.cursor()
-        # Fetch basic document info
-        cur.execute("""
-            SELECT id, filename, status, created_at
-            FROM documents
-            ORDER BY created_at DESC
-        """)
-        docs = cur.fetchall()
-
-        result = []
-        for doc in docs:
-            doc_id = doc["id"]
-            # Count chunks for this document
-            cur.execute("SELECT COUNT(*) FROM chunks WHERE document_id = ?", (doc_id,))
-            chunks_count = cur.fetchone()[0]
-
-            result.append({
-                "id": doc_id,
-                "filename": doc["filename"],
-                "status": doc["status"],
-                "created_at": doc["created_at"],
-                "chunks_count": chunks_count
-            })
-
+@router.get("/", response_model=List[DocumentResponse])
+def list_documents_endpoint():
+    """List all documents."""
+    docs = list_documents()
+    result = []
+    for doc in docs:
+        meta = json.loads(doc.get("meta_json") or "{}")
+        result.append(DocumentResponse(
+            id=doc["id"],
+            filename=doc["filename"],
+            status=doc["status"],
+            created_at=str(doc["created_at"]),
+            chunks_count=meta.get("chunks_count", 0),
+        ))
     return result
-@router.get("/{document_id}/chunks")
-def get_document_chunks(document_id: str, current_user=Depends(get_current_user)):
-    """
-    Return all chunks for a specific document.
-    """
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT id, chunk_index, text
-            FROM chunks
-            WHERE document_id = ?
-            ORDER BY chunk_index ASC
-            """,
-            (document_id,),
-        )
-        rows = cur.fetchall()
 
-    # Format rows to return preview
-    chunks = []
-    for row in rows:
-        text = row["text"]
-        preview = text[:100] + "..." if len(text) > 100 else text
-        chunks.append({
-            "id": row["id"],
-            "chunk_index": row["chunk_index"],
-            "preview": preview,
-            # Optional fields
-            "char_start": 0,  # you can populate if you store these
-            "char_end": len(text)
-        })
 
-    return chunks
+@router.get("/{doc_id}/status", response_model=DocumentStatusResponse)
+def get_document_status_endpoint(doc_id: str):
+    """Get processing status of a document."""
+    status = get_document_status(doc_id)
+    if not status:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return DocumentStatusResponse(**status)
+
+
+@router.get("/{doc_id}/chunks")
+def get_document_chunks(doc_id: str):
+    """Get chunks for a document."""
+    doc = get_document(doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    
+    chunks = get_chunks_for_document(doc_id)
+    return {
+        "document_id": doc_id,
+        "chunks_count": len(chunks),
+        "chunks": chunks,
+    }
+
+
+@router.delete("/{doc_id}")
+def delete_document_endpoint(doc_id: str):
+    """Delete a document and its chunks."""
+    from app.repository import delete_document
+    success = delete_document(doc_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return {"deleted": True}

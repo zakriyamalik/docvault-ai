@@ -5,7 +5,7 @@ from uuid import uuid4
 from datetime import datetime
 
 from app.chunker.tokenizer_wrapper import tokenize_text, token_spans_to_char_offsets
-from app.db.sqlite_conn import get_db  # Correct DB access
+from app.db.postgres_conn import get_db  # Correct DB access
 
 # Default chunk size (tokens) used by the chunker.
 DEFAULT_CHUNK_SIZE = 500
@@ -79,67 +79,73 @@ def chunk_pages(
                 try:
                     char_start, char_end = token_spans_to_char_offsets(offsets, start, sub_end)
                 except Exception:
-                    break
-                char_start = max(0, int(char_start))
-                char_end = min(len(text), int(char_end))
-                sub_chunk_text = text[char_start:char_end]
-
+                    char_start = 0
+                    char_end = len(text)
+                
+                chunk_text = text[char_start:char_end]
                 chunks.append({
                     "id": str(uuid4()),
                     "document_id": document_id,
                     "chunk_index": global_chunk_index,
-                    "text": sub_chunk_text,
+                    "text": chunk_text,
                     "token_count": sub_end - start,
                     "created_at": _iso_now(),
                     "page": page_num,
                     "char_start_page": char_start,
                     "char_end_page": char_end,
                     "ocr_used": bool(ocr_used),
-                    "preview": sub_chunk_text[:256],
+                    "preview": chunk_text[:256],
                 })
                 global_chunk_index += 1
                 start = sub_end
 
-            # process remaining chunk <= max_model_tokens
-            if start < end:
-                try:
-                    char_start, char_end = token_spans_to_char_offsets(offsets, start, end)
-                except Exception:
-                    break
-                char_start = max(0, int(char_start))
-                char_end = min(len(text), int(char_end))
-                chunk_text = text[char_start:char_end]
+            # Normal chunk
+            try:
+                char_start, char_end = token_spans_to_char_offsets(offsets, start, end)
+            except Exception:
+                char_start = 0
+                char_end = len(text)
+            
+            chunk_text = text[char_start:char_end]
+            chunks.append({
+                "id": str(uuid4()),
+                "document_id": document_id,
+                "chunk_index": global_chunk_index,
+                "text": chunk_text,
+                "token_count": end - start,
+                "created_at": _iso_now(),
+                "page": page_num,
+                "char_start_page": char_start,
+                "char_end_page": char_end,
+                "ocr_used": bool(ocr_used),
+                "preview": chunk_text[:256],
+            })
+            global_chunk_index += 1
 
-                if chunk_text:
-                    chunks.append({
-                        "id": str(uuid4()),
-                        "document_id": document_id,
-                        "chunk_index": global_chunk_index,
-                        "text": chunk_text,
-                        "token_count": end - start,
-                        "created_at": _iso_now(),
-                        "page": page_num,
-                        "char_start_page": char_start,
-                        "char_end_page": char_end,
-                        "ocr_used": bool(ocr_used),
-                        "preview": chunk_text[:256],
-                    })
-                    global_chunk_index += 1
-
-            start += stride
+            if end >= total_tokens:
+                break
+            start = min(start + stride, total_tokens - 1)
+            if start >= total_tokens:
+                break
 
     return chunks
 
 
-def persist_chunks_to_db(chunks: List[Dict]):
+def persist_chunks_to_db(chunks: List[Dict[str, Any]]) -> None:
     """
-    Insert chunk dicts into DB matching the actual chunks table schema.
-    Uses executemany (batch insert) for performance.
+    Persist chunks to PostgreSQL database.
+    Uses batch insert for performance.
     """
+    if not chunks:
+        return
+
+    # PostgreSQL uses %s placeholders instead of ?
     insert_sql = """
-    INSERT INTO chunks (id, document_id, chunk_index, text, token_count, created_at)
-    VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO chunks (id, document_id, chunk_index, text, token_count, created_at)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        ON CONFLICT (id) DO NOTHING
     """
+    
     rows = [
         (
             c["id"],
@@ -151,6 +157,34 @@ def persist_chunks_to_db(chunks: List[Dict]):
         )
         for c in chunks
     ]
+
     with get_db() as conn:
-        conn.executemany(insert_sql, rows)
-        conn.commit()
+        with conn.cursor() as cur:
+            cur.executemany(insert_sql, rows)
+            conn.commit()
+
+
+def get_chunks_for_document(doc_id: str) -> List[Dict[str, Any]]:
+    """
+    Retrieve all chunks for a given document ID.
+    """
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, document_id, chunk_index, text, token_count, vector_id FROM chunks WHERE document_id = %s ORDER BY chunk_index",
+                (doc_id,),
+            )
+            rows = cur.fetchall()
+            colnames = [desc[0] for desc in cur.description]
+            return [dict(zip(colnames, row)) for row in rows]
+
+
+def count_chunks_for_document(doc_id: str) -> int:
+    """
+    Count chunks for a document.
+    """
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM chunks WHERE document_id = %s", (doc_id,))
+            result = cur.fetchone()
+            return result[0] if result else 0

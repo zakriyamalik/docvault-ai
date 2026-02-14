@@ -1,12 +1,20 @@
-FROM node:18
+FROM node:18-alpine
 
 WORKDIR /app
 
 COPY package.json package-lock.json* ./
-RUN npm ci
+RUN npm ci --ignore-scripts
 
 COPY . .
 
-EXPOSE 5173
+# Skip Cypress installation in production
+ENV CYPRESS_INSTALL_BINARY=0
 
-CMD ["npm", "run", "dev", "--", "--host"]
+RUN npm run build
+
+FROM nginx:alpine
+COPY --from=0 /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]

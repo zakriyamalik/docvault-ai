@@ -18,7 +18,7 @@ import argparse
 import logging
 from typing import List, Tuple
 
-from app.db.sqlite_conn import get_db
+from app.db.postgres_conn import get_db
 from app.embeddings.embeddings import EmbeddingWrapper
 from app.faiss_manager import FAISSManager
 

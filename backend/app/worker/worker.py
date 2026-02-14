@@ -22,7 +22,8 @@ logger = logging.getLogger("worker")
 # structured logger for events
 log = get_logger("worker")
 
-REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")  # keep consistent with enqueue script
+redis_host = os.getenv("REDIS_HOST", "redis.docvault.local")
+REDIS_URL = f"redis://{redis_host}:6379/0"  # keep consistent with enqueue script
 QUEUE_NAME = os.getenv("RQ_QUEUE", "ingest")
 
 

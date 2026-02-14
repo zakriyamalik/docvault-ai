@@ -18,3 +18,5 @@ filelock
 numpy
 prometheus-client
 groq>=0.4.0
+sentence-transformers==2.5.1
+psycopg2-binary>=2.9.0

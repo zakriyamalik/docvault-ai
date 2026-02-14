@@ -32,9 +32,8 @@ COPY .env.example .env
 RUN mkdir -p /data/uploads
 
 # ADD THIS LINE ↓↓↓
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
 
 EXPOSE 8000
 
 # Default command for backend; worker will override command in docker-compose
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--access-log", "--log-level", "info"]
