@@ -14,7 +14,7 @@ from app.repository import (
 )
 from app.services.query_service import QueryService
 
-router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
+router = APIRouter(tags=["chat"])
 
 # =============================================================================
 # PYDANTIC SCHEMAS

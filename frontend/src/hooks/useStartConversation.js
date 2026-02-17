@@ -34,7 +34,7 @@ export function useStartConversation() {
         const response = await fetch(
           `${
             import.meta.env.VITE_API_URL || "http://localhost:8000"
-          }/api/v1/chat/${conversation_id}/history`
+          }/api/chat/${conversation_id}/history`
         );
         const historyData = await response.json();
 

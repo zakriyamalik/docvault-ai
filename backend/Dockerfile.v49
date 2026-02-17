@@ -1,0 +1,10 @@
+FROM 469773393417.dkr.ecr.us-east-1.amazonaws.com/docvault-backend:v48
+
+# Install boto3 (missing dependency)
+RUN pip install boto3
+
+# Verify boto3 is installed
+RUN python3 -c "import boto3; print('boto3 version:', boto3.__version__)"
+
+# Verify documents.py fix is still in place
+RUN grep -n "isinstance(meta_json" /app/app/api/documents.py || (echo "Fix missing!" && exit 1)

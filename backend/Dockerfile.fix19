@@ -1,0 +1,2 @@
+FROM 469773393417.dkr.ecr.us-east-1.amazonaws.com/docvault-backend:fix17
+COPY app/api/documents.py /app/app/api/documents.py

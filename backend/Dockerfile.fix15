@@ -1,0 +1,5 @@
+FROM 469773393417.dkr.ecr.us-east-1.amazonaws.com/docvault-backend:fix14
+COPY app/db/init_db.py /app/app/db/init_db.py
+COPY app/db/migrations/000_reset_database.sql /app/app/db/migrations/000_reset_database.sql
+COPY app/db/migrations/001_create_documents_chunks.sql /app/app/db/migrations/001_create_documents_chunks.sql
+COPY app/db/migrations/002_create_conversations.sql /app/app/db/migrations/002_create_conversations.sql

@@ -1,0 +1,4 @@
+FROM docvault-backend:fix30
+COPY app/tasks.py /app/app/tasks.py
+COPY app/retrieval/retriever.py /app/app/retrieval/retriever.py
+COPY app/faiss_manager.py /app/app/faiss_manager.py

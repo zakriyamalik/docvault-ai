@@ -1,0 +1,4 @@
+FROM 469773393417.dkr.ecr.us-east-1.amazonaws.com/docvault-backend:postgres-hotfix
+
+# Copy fixed repository.py with conversation functions
+COPY app/repository.py /app/app/repository.py

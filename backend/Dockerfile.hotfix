@@ -1,0 +1,13 @@
+FROM 469773393417.dkr.ecr.us-east-1.amazonaws.com/docvault-backend:v46
+
+# Copy the fix script
+COPY fix_documents.py /tmp/fix_documents.py
+
+# Run the fix script
+RUN python3 /tmp/fix_documents.py
+
+# Verify the fix
+RUN grep -n "isinstance(meta_json" /app/app/api/documents.py || (echo "Fix not applied!" && exit 1)
+
+# Clean up
+RUN rm /tmp/fix_documents.py

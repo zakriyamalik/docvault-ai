@@ -45,6 +45,6 @@ from app.api.chat import router as chat_router
 from app.api.admin import router as admin_router
 
 # Register API routers
-app.include_router(documents_router)
-app.include_router(chat_router)
+app.include_router(documents_router, prefix="/api/documents", tags=["documents"])
+app.include_router(chat_router, prefix="/api/chat", tags=["chat"])
 app.include_router(admin_router, prefix="/api/v1/admin", tags=["admin"])

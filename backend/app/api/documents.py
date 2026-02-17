@@ -90,8 +90,8 @@ async def upload_document(
     
     # Enqueue job for processing
     try:
-        from app.queue import enqueue_ingest
-        job_id = enqueue_ingest(doc_id, local_path)
+        from app.worker.enqueue_ingest import enqueue_ingest
+        job_id = enqueue_ingest(doc_id, f"s3://{S3_BUCKET}/{s3_key}" if s3_key else local_path)
     except Exception as e:
         print(f"Failed to enqueue job: {e}")
         job_id = None

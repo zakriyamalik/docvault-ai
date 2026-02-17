@@ -1,9 +1,9 @@
 {
-    "taskDefinitionArn": "arn:aws:ecs:us-east-1:469773393417:task-definition/docvault-worker:3",
+    "taskDefinitionArn": "arn:aws:ecs:us-east-1:469773393417:task-definition/docvault-worker:5",
     "containerDefinitions": [
         {
             "name": "worker",
-            "image": "469773393417.dkr.ecr.us-east-1.amazonaws.com/docvault-worker@sha256:1920ad501488099231ea0dec6f8e72fa5abf42aa1bd5382d397c418e8168377c",
+            "image": "469773393417.dkr.ecr.us-east-1.amazonaws.com/docvault-worker@sha256:fdbfefbb3cedcfbf4883338be7abc24c2ba1a110242b4e942bb30ee8b021d61d",
             "cpu": 0,
             "portMappings": [],
             "essential": true,
@@ -73,7 +73,7 @@
     "taskRoleArn": "arn:aws:iam::469773393417:role/docvault-ecs-task",
     "executionRoleArn": "arn:aws:iam::469773393417:role/docvault-ecs-execution",
     "networkMode": "awsvpc",
-    "revision": 3,
+    "revision": 5,
     "volumes": [],
     "status": "ACTIVE",
     "requiresAttributes": [
@@ -119,6 +119,6 @@
     ],
     "cpu": "256",
     "memory": "512",
-    "registeredAt": "2026-02-13T20:22:51.413000+05:00",
+    "registeredAt": "2026-02-15T02:52:35.187000+05:00",
     "registeredBy": "arn:aws:iam::469773393417:user/dev-cli-user"
 }

@@ -1,0 +1,2 @@
+FROM 469773393417.dkr.ecr.us-east-1.amazonaws.com/docvault-backend:fix11
+COPY app/db/migrations/002_create_conversations.sql /app/app/db/migrations/002_create_conversations.sql

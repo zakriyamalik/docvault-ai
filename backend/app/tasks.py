@@ -20,6 +20,22 @@ from app.faiss_manager import FAISSManager
 from app.logging import get_logger
 import redis
 
+import boto3
+import os
+
+s3_client = boto3.client("s3", region_name="us-east-1")
+
+def download_from_s3(s3_url: str) -> str:
+    """Download S3 file to /tmp/ and return local path"""
+    if not s3_url.startswith("s3://"):
+        return s3_url
+    # Parse s3://bucket/key
+    parts = s3_url[5:].split("/", 1)
+    bucket = parts[0]
+    key = parts[1] if len(parts) > 1 else ""
+    local_path = f"/tmp/{os.path.basename(key)}"
+    s3_client.download_file(bucket, key, local_path)
+    return local_path
 logger = logging.getLogger(__name__)
 log = get_logger("ingest")
 
@@ -65,7 +81,11 @@ def ingest_document_atomic(document_id: str, file_path: Optional[str] = None):
                 colnames = [desc[0] for desc in cur.description]
                 rowdict = dict(zip(colnames, row))
                 
-                meta = json.loads(rowdict.get("meta_json") or "{}")
+                meta_json = rowdict.get("meta_json") or "{}"
+                if isinstance(meta_json, dict):
+                    meta = meta_json
+                else:
+                    meta = json.loads(meta_json)
                 meta["ingest_started_at"] = _now_iso()
                 
                 cur.execute(
@@ -83,6 +103,12 @@ def ingest_document_atomic(document_id: str, file_path: Optional[str] = None):
         logger.info("[ingest:%s] Phase 1: validation", document_id)
         if not file_path:
             raise ValueError("file_path is required")
+
+        # Download from S3 if needed
+        original_path = file_path
+        file_path = download_from_s3(file_path)
+        if original_path != file_path:
+            logger.info("[ingest:%s] Downloaded from S3 to %s", document_id, file_path)
         
         # Phase 2: Parsing
         logger.info("[ingest:%s] Phase 2: parsing", document_id)
@@ -154,6 +180,26 @@ def ingest_document_atomic(document_id: str, file_path: Optional[str] = None):
             for vid, c in zip(new_ids, batch):
                 vector_map.append((vid, c["id"]))
             log.info(event="embedding_batch", document_id=document_id, batch=i//BATCH_SIZE_EMBED, count=len(texts))
+        
+        # ===================================================================
+        # DEBUG CODE - Added to diagnose EFS/FAISS issue
+        # ===================================================================
+        logger.info("[DEBUG WORKER] Current dir: %s", os.getcwd())
+        logger.info("[DEBUG WORKER] /data exists: %s", os.path.exists('/data'))
+        logger.info("[DEBUG WORKER] /data/faiss exists: %s", os.path.exists('/data/faiss'))
+        if os.path.exists('/data'):
+            try:
+                logger.info("[DEBUG WORKER] /data contents: %s", os.listdir('/data'))
+            except Exception as e:
+                logger.info("[DEBUG WORKER] /data contents error: %s", e)
+        if os.path.exists('/data/faiss'):
+            try:
+                logger.info("[DEBUG WORKER] /data/faiss contents: %s", os.listdir('/data/faiss'))
+            except Exception as e:
+                logger.info("[DEBUG WORKER] /data/faiss contents error: %s", e)
+        logger.info("[DEBUG WORKER] Saving to: %s", FAISS_INDEX_PATH)
+        logger.info("[DEBUG WORKER] FAISS index count: %s", faiss_mgr.get_index_count())
+        # ===================================================================
         
         faiss_mgr.save_index(FAISS_INDEX_PATH)
         log.info(event="faiss_saved", document_id=document_id, count=len(vector_map))

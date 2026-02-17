@@ -1,0 +1,142 @@
+from typing import List, Dict, Any, Optional
+import json
+from dataclasses import dataclass
+from app.db.postgres_conn import get_db
+from app.embeddings.embeddings import EmbeddingWrapper
+from app.faiss_manager import FAISSManager
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class Chunk:
+    chunk_id: str
+    document_id: str
+    content: str
+    embedding: Optional[List[float]] = None
+    metadata: Optional[Dict[str, Any]] = None
+    score: float = 0.0
+
+
+def retrieve_relevant_chunks(
+    query: str,
+    top_k: int = 5,
+    faiss_index_path: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Retrieve relevant chunks for a query using FAISS similarity search.
+    """
+    # Get query embedding
+    ew = EmbeddingWrapper()
+    query_vector = ew.embed_texts([query])[0]
+    
+    # Load FAISS index
+    faiss_mgr = FAISSManager()
+    
+    # ===================================================================
+    # DEBUG CODE - Added to diagnose EFS/FAISS issue
+    # ===================================================================
+    import os
+    target_path = faiss_index_path or os.getenv("FAISS_INDEX_PATH", "/data/faiss/default.faiss")
+    
+    logger.info("[DEBUG BACKEND] /data exists: %s", os.path.exists('/data'))
+    logger.info("[DEBUG BACKEND] /data/faiss exists: %s", os.path.exists('/data/faiss'))
+    logger.info("[DEBUG BACKEND] Target file exists: %s", os.path.exists(target_path))
+    logger.info("[DEBUG BACKEND] Target path: %s", target_path)
+    
+    if os.path.exists('/data'):
+        try:
+            logger.info("[DEBUG BACKEND] /data contents: %s", os.listdir('/data'))
+        except Exception as e:
+            logger.info("[DEBUG BACKEND] /data contents error: %s", e)
+    if os.path.exists('/data/faiss'):
+        try:
+            logger.info("[DEBUG BACKEND] /data/faiss contents: %s", os.listdir('/data/faiss'))
+        except Exception as e:
+            logger.info("[DEBUG BACKEND] /data/faiss contents error: %s", e)
+    
+    # Check parent directories
+    parent = os.path.dirname(target_path)
+    while parent and parent != '/':
+        logger.info("[DEBUG BACKEND] Parent %s exists: %s", parent, os.path.exists(parent))
+        if os.path.exists(parent):
+            try:
+                logger.info("[DEBUG BACKEND] Parent %s contents: %s", parent, os.listdir(parent))
+            except Exception as e:
+                logger.info("[DEBUG BACKEND] Parent %s contents error: %s", parent, e)
+        parent = os.path.dirname(parent)
+    # ===================================================================
+    
+    if faiss_index_path:
+        faiss_mgr.load_index(faiss_index_path)
+    else:
+        # Use default path
+        default_path = os.getenv("FAISS_INDEX_PATH", "/data/faiss/default.faiss")
+        faiss_mgr.load_index(default_path)
+    
+    # Search FAISS
+    distances, indices = faiss_mgr.search(query_vector.reshape(1, -1), top_k)
+    
+    # Get chunk details from PostgreSQL
+    results = []
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            for idx, distance in zip(indices[0], distances[0]):
+                if idx < 0:
+                    continue
+                
+                # Look up chunk by vector_id
+                cur.execute(
+                    "SELECT c.id, c.document_id, c.text, c.chunk_index, d.filename "
+                    "FROM chunks c "
+                    "JOIN faiss_index_map fim ON c.id = fim.chunk_id "
+                    "JOIN documents d ON c.document_id = d.id "
+                    "WHERE fim.vector_id = %s",
+                    (str(idx),),
+                )
+                row = cur.fetchone()
+                if row:
+                    results.append({
+                        "chunk_id": row[0],
+                        "document_id": row[1],
+                        "text": row[2],
+                        "chunk_index": row[3],
+                        "filename": row[4],
+                        "score": float(distance),
+                    })
+    
+    return results
+
+
+def get_document_context(doc_id: str, max_chunks: int = 10) -> str:
+    """
+    Get full text context from a document (for summarization).
+    """
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT text FROM chunks WHERE document_id = %s ORDER BY chunk_index LIMIT %s",
+                (doc_id, max_chunks),
+            )
+            texts = [row[0] for row in cur.fetchall()]
+    
+    return "\n\n".join(texts)
+
+
+# Alias for query_service.py compatibility
+def retrieve(query: str, top_k: int = 5) -> List[Chunk]:
+    """
+    Retrieve chunks as Chunk objects (for query_service.py compatibility).
+    """
+    results = retrieve_relevant_chunks(query, top_k)
+    chunks = []
+    for r in results:
+        chunks.append(Chunk(
+            chunk_id=r["chunk_id"],
+            document_id=r["document_id"],
+            content=r["text"],
+            score=r["score"],
+            metadata={"chunk_index": r["chunk_index"], "filename": r["filename"]}
+        ))
+    return chunks

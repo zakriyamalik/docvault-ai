@@ -1,9 +1,9 @@
 {
-    "taskDefinitionArn": "arn:aws:ecs:us-east-1:469773393417:task-definition/docvault-backend:9",
+    "taskDefinitionArn": "arn:aws:ecs:us-east-1:469773393417:task-definition/docvault-backend:28",
     "containerDefinitions": [
         {
             "name": "backend",
-            "image": "469773393417.dkr.ecr.us-east-1.amazonaws.com/docvault-backend@sha256:32a17872b2bef53cc8dbc97921b772852a5c54e02ac34e1ed8bba69d4aaf7cc0",
+            "image": "469773393417.dkr.ecr.us-east-1.amazonaws.com/docvault-backend@sha256:433559a49c364845dfe8bc3590d4a33558e5b76e983b5e0af6e6318dfe715744",
             "cpu": 0,
             "portMappings": [
                 {
@@ -53,6 +53,10 @@
                 {
                     "name": "LLM_MODEL",
                     "value": "llama-3.1-8b-instant"
+                },
+                {
+                    "name": "REDIS_URL",
+                    "value": "redis://redis.docvault.local:6379/0"
                 }
             ],
             "mountPoints": [],
@@ -78,7 +82,7 @@
     "taskRoleArn": "arn:aws:iam::469773393417:role/docvault-ecs-task",
     "executionRoleArn": "arn:aws:iam::469773393417:role/docvault-ecs-execution",
     "networkMode": "awsvpc",
-    "revision": 9,
+    "revision": 28,
     "volumes": [],
     "status": "ACTIVE",
     "requiresAttributes": [
@@ -116,14 +120,14 @@
     "placementConstraints": [],
     "compatibilities": [
         "EC2",
-        "FARGATE",
-        "MANAGED_INSTANCES"
+        "MANAGED_INSTANCES",
+        "FARGATE"
     ],
     "requiresCompatibilities": [
         "FARGATE"
     ],
     "cpu": "256",
     "memory": "512",
-    "registeredAt": "2026-02-13T20:21:19.890000+05:00",
+    "registeredAt": "2026-02-15T12:53:03.805000+05:00",
     "registeredBy": "arn:aws:iam::469773393417:user/dev-cli-user"
 }

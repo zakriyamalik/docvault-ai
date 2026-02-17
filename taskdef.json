@@ -1,0 +1,71 @@
+{
+    "family": "docvault-backend",
+    "taskRoleArn": "arn:aws:iam::469773393417:role/docvault-ecs-task",
+    "executionRoleArn": "arn:aws:iam::469773393417:role/docvault-ecs-execution",
+    "networkMode": "awsvpc",
+    "containerDefinitions": [
+        {
+            "name": "backend",
+            "image": "469773393417.dkr.ecr.us-east-1.amazonaws.com/docvault-backend:v46",
+            "cpu": 0,
+            "essential": true,
+            "portMappings": [
+                {
+                    "containerPort": 8000,
+                    "hostPort": 8000,
+                    "protocol": "tcp"
+                }
+            ],
+            "environment": [
+                {"name": "EMBEDDING_STUB", "value": "true"},
+                {"name": "REDIS_HOST", "value": "redis.docvault.local"},
+                {"name": "AWS_REGION", "value": "us-east-1"},
+                {"name": "DATABASE_URL", "value": "postgresql://docvault:DocVault2024Secure@docvault-db.ckvs6kwu40qt.us-east-1.rds.amazonaws.com:5432/docvault"},
+                {"name": "REDIS_PORT", "value": "6379"},
+                {"name": "AWS_S3_BUCKET", "value": "docvault-uploads-bdc03aa9"},
+                {"name": "STORAGE_BACKEND", "value": "s3"},
+                {"name": "LLM_PROVIDER", "value": "groq"},
+                {"name": "CORS_ORIGINS", "value": "http://docvault-alb-1273762932.us-east-1.elb.amazonaws.com"},
+                {"name": "LLM_MODEL", "value": "llama-3.1-8b-instant"},
+                {"name": "REDIS_URL", "value": "redis://redis.docvault.local:6379/0"}
+            ],
+            "mountPoints": [
+                {"sourceVolume": "docvault-data", "containerPath": "/data", "readOnly": false}
+            ],
+            "volumesFrom": [],
+            "secrets": [
+                {
+                    "name": "GROQ_API_KEY",
+                    "valueFrom": "arn:aws:secretsmanager:us-east-1:469773393417:secret:docvault/groq-api-key-thEak9"
+                }
+            ],
+            "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                    "awslogs-group": "/ecs/docvault-backend",
+                    "awslogs-region": "us-east-1",
+                    "awslogs-stream-prefix": "ecs"
+                }
+            },
+            "systemControls": []
+        }
+    ],
+    "volumes": [
+        {
+            "name": "docvault-data",
+            "efsVolumeConfiguration": {
+                "fileSystemId": "fs-016a1260e7ff3855e",
+                "rootDirectory": "/",
+                "transitEncryption": "ENABLED",
+                "authorizationConfig": {
+                    "accessPointId": "fsap-0b3aca04e2723d385",
+                    "iam": "ENABLED"
+                }
+            }
+        }
+    ],
+    "placementConstraints": [],
+    "requiresCompatibilities": ["FARGATE"],
+    "cpu": "256",
+    "memory": "512"
+}
